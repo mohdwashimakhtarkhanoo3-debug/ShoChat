@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Shochat</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial}
+body{background:#0f172a;color:white;height:100vh}
+
+/* LOGIN */
+#login{
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:15px;
+}
+#login input{
+  width:80%;
+  max-width:300px;
+  padding:14px;
+  border-radius:10px;
+  border:none;
+}
+#login button{
+  width:80%;
+  max-width:300px;
+  padding:14px;
+  border:none;
+  border-radius:10px;
+  background:#22c55e;
+  color:black;
+  font-weight:bold;
+  font-size:16px;
+}
+
+/* APP */
+#app{display:none;height:100vh}
+#top{
+  background:#020617;
+  padding:10px;
+  text-align:center;
+  font-weight:bold;
+}
+
+#main{display:flex;height:calc(100vh - 45px)}
+
+/* FRIENDS */
+#friends{
+  width:35%;
+  background:#020617;
+  padding:10px;
+  overflow-y:auto;
+}
+#friends input{
+  width:100%;
+  padding:8px;
+  border-radius:8px;
+  border:none;
+  margin-bottom:10px;
+}
+.friend{
+  background:#1e293b;
+  padding:10px;
+  margin-bottom:8px;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+/* CHAT */
+#chat{
+  width:65%;
+  display:flex;
+  flex-direction:column;
+}
+#messages{
+  flex:1;
+  padding:10px;
+  overflow-y:auto;
+}
+.msg{margin-bottom:8px}
+.me{color:#22c55e}
+.other{color:#60a5fa}
+
+#inputBar{
+  display:flex;
+  gap:6px;
+  padding:10px;
+  background:#020617;
+}
+#inputBar input{
+  flex:1;
+  padding:10px;
+  border-radius:8px;
+  border:none;
+}
+#inputBar button{
+  padding:10px;
+  border-radius:8px;
+  border:none;
+}
+</style>
+</head>
+
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <h2>Shochat</h2>
+  <input id="username" placeholder="Enter username">
+  <button onclick="continueApp()">Continue</button>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div id="top">User: <span id="me"></span></div>
+
+  <div id="main">
+    <div id="friends">
+      <input id="search" placeholder="Search friend" oninput="searchFriend()">
+      <div id="results"></div>
+      <hr>
+      <div id="friendList"></div>
+    </div>
+
+    <div id="chat">
+      <div id="messages"></div>
+      <div id="inputBar">
+        <button>📷</button>
+        <input id="msg" placeholder="Message">
+        <button onclick="sendMsg()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 🔑 FIREBASE CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyAZNf2PqkpgT7Fsgi1KLzO6u6rxrx--5x0",
+  authDomain: "shochat-9166c.firebaseapp.com",
+  projectId: "shochat-9166c"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+let meUser = "";
+let chattingWith = "";
+
+/* CONTINUE */
+function continueApp(){
+  const u = username.value.trim().toLowerCase();
+  if(!u){ alert("Name likh"); return; }
+
+  db.collection("users").doc(u).set({name:u},{merge:true});
+  meUser = u;
+
+  login.style.display="none";
+  app.style.display="block";
+  me.innerText = u;
+
+  loadFriends();
+}
+
+/* SEARCH FRIEND */
+function searchFriend(){
+  const q = search.value.trim().toLowerCase();
+  if(!q){ results.innerHTML=""; return; }
+
+  db.collection("users").doc(q).get().then(doc=>{
+    if(doc.exists && q!==meUser){
+      results.innerHTML =
+      `<div class="friend" onclick="addFriend('${q}')">
+        ${q}<br><small>Add Friend</small>
+      </div>`;
+    } else {
+      results.innerHTML="";
+    }
+  });
+}
+
+/* ADD FRIEND */
+function addFriend(f){
+  db.collection("users").doc(meUser)
+    .collection("friends").doc(f).set({name:f});
+  results.innerHTML="";
+  loadFriends();
+}
+
+/* LOAD FRIENDS */
+function loadFriends(){
+  friendList.innerHTML="";
+  db.collection("users").doc(meUser)
+    .collection("friends").get().then(snap=>{
+      snap.forEach(d=>{
+        friendList.innerHTML +=
+        `<div class="friend" onclick="openChat('${d.id}')">${d.id}</div>`;
+      });
+    });
+}
+
+/* OPEN CHAT */
+function openChat(f){
+  chattingWith = f;
+  messages.innerHTML="";
+  const id = [meUser,f].sort().join("_");
+
+  db.collection("chats").doc(id)
+    .collection("msgs").orderBy("time")
+    .onSnapshot(snap=>{
+      messages.innerHTML="";
+      snap.forEach(d=>{
+        const m=d.data();
+        messages.innerHTML +=
+        `<div class="msg ${m.from===meUser?'me':'other'}">
+          ${m.from}: ${m.text}
+        </div>`;
+      });
+    });
+}
+
+/* SEND MSG */
+function sendMsg(){
+  if(!chattingWith) return alert("Friend select kar");
+  if(!msg.value) return;
+
+  const id = [meUser,chattingWith].sort().join("_");
+  db.collection("chats").doc(id)
+    .collection("msgs").add({
+      from:meUser,
+      text:msg.value,
+      time:Date.now()
+    });
+  msg.value="";
+}
+</script>
+
+</body>
+</html>
